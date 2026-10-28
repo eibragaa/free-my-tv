@@ -137,6 +137,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final int[] neutralGlassPx = new int[Backdrop.GW * Backdrop.GH], neutralFrostPx = new int[Backdrop.FW * Backdrop.FH];
     private boolean nightPair;          // the glass holds both photos (day and night), blended by `night`
     private Shader nightGradient;
+    /** CamGate skin on (Prefs.theme "sinal"): graphite background, yellow focus ring, white text. */
+    private boolean sinal;
 
     // At the top: tabs (0 to 2) and icon-only buttons (3 to 5); the three cards
     private int tab, topIndex, cardIndex;
@@ -269,6 +271,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Paint imageFill = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint rim = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint sheen = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint veil = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -623,6 +626,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void makePaints() {
+        sinal = Prefs.theme().equals("sinal");
         labelPaint = Ui.text(Ui.medium, 25 * k, 0xC7FFFFFF);
         labelPaint.setLetterSpacing(0.1f);
         titlePaint = new TextPaint(Ui.text(Ui.displayMedium, 76 * k, 0xFFFFFFFF));
@@ -690,6 +694,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         border.setStrokeWidth(2 * k);
         rim.setStyle(Paint.Style.STROKE);
         rim.setStrokeWidth(2.5f * k);
+        ring.setStyle(Paint.Style.STROKE);
+        ring.setStrokeWidth(4 * k);
+        ring.setStrokeCap(Paint.Cap.ROUND);
+        ring.setColor(0xFFFFCD00);          // CamGate's signal yellow, only in the sinal skin
         onPlaying();   // the line fits the new size; a title that came before the first layout bounces and is said now
     }
 
@@ -839,7 +847,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void updatePalette() {
         HomeData.Weather wx = data.weather;
-        Shaders.sky(scene.palette, System.currentTimeMillis(), wx.sunrise, wx.sunset);
+        if (sinal) Shaders.graphite(scene.palette);   // CamGate skin: no sky, always graphite
+        else Shaders.sky(scene.palette, System.currentTimeMillis(), wx.sunrise, wx.sunset);
         scene.applyPalette();
     }
 
@@ -1043,7 +1052,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void applyTone() {
         lTitle.setColor(tone(L_INK, WHITE));
         lTab.setColor(tone(L_DIM, 0xFF8E8E93));
-        lTabOn.setColor(tone(L_INK, WHITE));
+        lTabOn.setColor(sinal ? 0xFFFFCD00 : tone(L_INK, WHITE));
         lCardTitle.setColor(tone(L_INK, WHITE));
         lCardMeta.setColor(tone(L_DIM, 0xFF98989D));
         lQuote.setColor(tone(L_FAINT, 0xB8FFFFFF));
@@ -1544,6 +1553,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             drawLogo(c, it, cell, s, 0);
         } else {
             if (it.tile != null) roundImage(c, it.tile, it.tileShader, cell, r);
+        }
+        if (sinal && fc > 0.01f) {   // CamGate skin: the focused app gets the brand's ring, visible from the sofa
+            ring.setAlpha(Math.round(255 * fc));
+            c.drawRoundRect(cell, r, r, ring);
+            ring.setAlpha(255);
         }
     }
 
@@ -2110,11 +2124,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         border.setColor(0x14FFFFFF);
         c.drawRoundRect(cell, r, r, border);
         if (f > 0.01f) {
-            rim.setShader(null);
-            rim.setColor(Ui.alpha(0xFFFFFFFF, 0.4f * fc));
-            rim.setStrokeWidth(1.5f * k);
-            c.drawRoundRect(cell, r, r, rim);
-            rim.setStrokeWidth(2.5f * k);
+            if (sinal) {   // CamGate skin: a solid yellow ring instead of the thin white one
+                ring.setAlpha(Math.round(255 * fc));
+                c.drawRoundRect(cell, r, r, ring);
+                ring.setAlpha(255);
+            } else {
+                rim.setShader(null);
+                rim.setColor(Ui.alpha(0xFFFFFFFF, 0.4f * fc));
+                rim.setStrokeWidth(1.5f * k);
+                c.drawRoundRect(cell, r, r, rim);
+                rim.setStrokeWidth(2.5f * k);
+            }
         }
     }
 
@@ -3215,12 +3235,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             sheen.setAlpha(alpha);
             c.drawRoundRect(tmp, r0, r0, sheen);
             sheen.setAlpha(255);
-            rim.setShader(lightRims[i]);
-            rim.setAlpha(alpha);
-            rim.setStrokeWidth(2.5f * k / s);
-            c.drawRoundRect(tmp, r0, r0, rim);
-            rim.setStrokeWidth(2.5f * k);
-            rim.setAlpha(255);
+            rim.setShader(null);
+            if (sinal) {   // CamGate skin: the brand's yellow ring, thick enough to see from the sofa
+                ring.setStrokeWidth(4 * k / s);
+                ring.setAlpha(alpha);
+                c.drawRoundRect(tmp, r0, r0, ring);
+                ring.setStrokeWidth(4 * k);
+                ring.setAlpha(255);
+            } else {
+                rim.setShader(lightRims[i]);
+                rim.setAlpha(alpha);
+                rim.setStrokeWidth(2.5f * k / s);
+                c.drawRoundRect(tmp, r0, r0, rim);
+                rim.setStrokeWidth(2.5f * k);
+                rim.setAlpha(255);
+            }
             c.restore();
         }
         // The cards peeking in at the sides show only their image: their text would start off screen.

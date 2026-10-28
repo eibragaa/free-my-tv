@@ -405,6 +405,7 @@ final class HomeData {
     static boolean isNight(String theme, long now, long sunrise, long sunset) {
         if (theme.equals("dark")) return true;
         if (theme.equals("light")) return false;
+        if (theme.equals("sinal")) return true;   // CamGate skin: graphite always, white text
         long t = Shaders.timeOfDay(now, 0);
         long rise = Shaders.timeOfDay(sunrise, 6 * 60 * 60_000L);
         long set = Shaders.timeOfDay(sunset, 18 * 60 * 60_000L);

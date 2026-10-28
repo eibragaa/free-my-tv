@@ -174,10 +174,10 @@ final class Prefs {
         put("servicesOff", list.length() > 1 ? list.substring(1, list.length() - 1) : "");
     }
 
-    /** "auto" (dark from sunset to sunrise), "light" or "dark". */
+    /** "auto" (dark from sunset to sunrise), "light", "dark", or "sinal" (the CamGate skin: graphite + yellow). */
     static String theme() {
         String v = sp().getString("theme", Config.THEME.trim());
-        return v.equals("light") || v.equals("dark") ? v : "auto";
+        return v.equals("light") || v.equals("dark") || v.equals("sinal") ? v : "auto";
     }
 
     static void setTheme(String v) { put("theme", v); }

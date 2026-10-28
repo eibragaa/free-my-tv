@@ -247,8 +247,7 @@ public class SettingsActivity extends Activity {
             super(a);
             activity = a;
             for (int i = 0; i < pop.length; i++) pop[i] = new Spring(0.28f, 0.85f, 0);
-            HomeData.Weather wx = HomeData.get(a).weather;
-            Shaders.sky(scene.palette, System.currentTimeMillis(), wx.sunrise, wx.sunset);
+            themeBackground();
             scene.setMotion(0.5f, 0.2f);
             scene.applyPalette();
             setFocusable(true);
@@ -773,7 +772,7 @@ public class SettingsActivity extends Activity {
 
         // MARK: - Home Settings and Remote Buttons
 
-        private static final String[] UNITS = {"auto", "C", "F"}, THEMES = {"auto", "light", "dark"};
+        private static final String[] UNITS = {"auto", "C", "F"}, THEMES = {"auto", "light", "dark", "sinal"};
         /** Home Settings: language, temperature, theme, my photos, sounds, picks, watch from the screensaver, weather, city,
          *  forecast, now playing, quotes, one row per coin, then the TMDB key and updates (the last row). */
         private static final int PHOTOS_ROW = 3, PICKS_ROW = 5, SAVER_ROW = 6, WEATHER_ROW = 7, CITY_ROW = 8, FORECAST_ROW = 9,
@@ -783,6 +782,15 @@ public class SettingsActivity extends Activity {
 
         private boolean dollar() {
             return "BRL".equals(Place.currency());
+        }
+
+        /** The background follows the theme: the sky, or graphite in the CamGate skin (sinal). */
+        private void themeBackground() {
+            HomeData.Weather wx = HomeData.get(activity).weather;
+            if (Prefs.theme().equals("sinal")) Shaders.graphite(scene.palette);
+            else Shaders.sky(scene.palette, System.currentTimeMillis(), wx.sunrise, wx.sunset);
+            scene.applyPalette();
+            invalidate();
         }
 
         private String[] settingLabels() {
@@ -839,7 +847,8 @@ public class SettingsActivity extends Activity {
             String unit = Prefs.temperature();
             v[1] = unit.equals("C") ? "°C" : unit.equals("F") ? "°F" : Ui.tr("unit|Automatic");
             String theme = Prefs.theme();
-            v[2] = theme.equals("light") ? Ui.tr("Light") : theme.equals("dark") ? Ui.tr("Dark") : Ui.tr("Automatic");
+            v[2] = theme.equals("light") ? Ui.tr("Light") : theme.equals("dark") ? Ui.tr("Dark")
+                    : theme.equals("sinal") ? "CamGate" : Ui.tr("Automatic");
             int photos = Photos.files(getContext()).size();
             v[PHOTOS_ROW] = photos == 0 ? Ui.tr("photos|None")
                     : Prefs.photos() ? Ui.plural("plural|one:{n} photo|other:{n} photos", photos) : Ui.tr("Off");
@@ -1124,6 +1133,7 @@ public class SettingsActivity extends Activity {
                 case 2: {
                     int at = java.util.Arrays.asList(THEMES).indexOf(Prefs.theme());
                     Prefs.setTheme(THEMES[(at + dir + THEMES.length) % THEMES.length]);
+                    themeBackground();
                     SleepOverlay.update(getContext());   // the pill's glass follows
                     break;
                 }

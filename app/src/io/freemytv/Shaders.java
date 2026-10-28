@@ -342,6 +342,16 @@ final class Shaders {
         out.set(NIGHT[0], NIGHT[1], NIGHT[2]);
     }
 
+    /**
+     * CamGate skin: graphite instead of the sky. It's the same home screen, only the theme changes: the
+     * background stops following the sun and the focus is the brand's yellow (drawn by HomeView).
+     */
+    private static final int[] GRAPHITE = {0x0B0B0B, 0x141414, 0x232323};
+
+    static void graphite(Palette out) {
+        out.set(GRAPHITE[0], GRAPHITE[1], GRAPHITE[2]);
+    }
+
     private static int mix(int a, int b, float f) {
         int r = Math.round(((a >> 16) & 255) * (1 - f) + ((b >> 16) & 255) * f);
         int g = Math.round(((a >> 8) & 255) * (1 - f) + ((b >> 8) & 255) * f);
