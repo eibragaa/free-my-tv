@@ -773,10 +773,12 @@ public class SettingsActivity extends Activity {
         // MARK: - Home Settings and Remote Buttons
 
         private static final String[] UNITS = {"auto", "C", "F"}, THEMES = {"auto", "light", "dark", "sinal"};
-        /** Home Settings: language, temperature, theme, my photos, sounds, picks, watch from the screensaver, weather, city,
-         *  forecast, now playing, quotes, one row per coin, then the TMDB key and updates (the last row). */
-        private static final int PHOTOS_ROW = 3, PICKS_ROW = 5, SAVER_ROW = 6, WEATHER_ROW = 7, CITY_ROW = 8, FORECAST_ROW = 9,
-                PLAYING_ROW = 10, QUOTES_ROW = 11, COIN_ROWS = 12;
+        private static final String[] LAYOUTS = {"shelf", "dock"};
+        /** Home Settings: language, temperature, theme, layout, my photos, sounds, picks, watch from the screensaver,
+         *  weather, city, forecast, now playing, quotes, one row per coin, then the TMDB key and updates (the last
+         *  row). */
+        private static final int LAYOUT_ROW = 3, PHOTOS_ROW = 4, SOUNDS_ROW = 5, PICKS_ROW = 6, SAVER_ROW = 7,
+                WEATHER_ROW = 8, CITY_ROW = 9, FORECAST_ROW = 10, PLAYING_ROW = 11, QUOTES_ROW = 12, COIN_ROWS = 13;
         /** Home Settings rows on screen at once (what fits above the hints at 1080p); a longer list scrolls. */
         private static final int SETTINGS_VISIBLE = 10;
 
@@ -798,6 +800,7 @@ public class SettingsActivity extends Activity {
             l.add(Ui.tr("Language"));
             l.add(Ui.tr("Temperature"));
             l.add(Ui.tr("Theme"));
+            l.add(Ui.tr("Home layout"));
             l.add(Ui.tr("My Photos"));
             l.add(Ui.tr("Navigation sounds"));
             l.add(Ui.tr("Picks"));
@@ -849,10 +852,11 @@ public class SettingsActivity extends Activity {
             String theme = Prefs.theme();
             v[2] = theme.equals("light") ? Ui.tr("Light") : theme.equals("dark") ? Ui.tr("Dark")
                     : theme.equals("sinal") ? "CamGate" : Ui.tr("Automatic");
+            v[LAYOUT_ROW] = Prefs.layout().equals("dock") ? Ui.tr("layout|Dock") : Ui.tr("layout|Shelf");
             int photos = Photos.files(getContext()).size();
             v[PHOTOS_ROW] = photos == 0 ? Ui.tr("photos|None")
                     : Prefs.photos() ? Ui.plural("plural|one:{n} photo|other:{n} photos", photos) : Ui.tr("Off");
-            v[4] = onOff(Prefs.sounds());
+            v[SOUNDS_ROW] = onOff(Prefs.sounds());
             v[PICKS_ROW] = "›";   // opens its own screen: Picks per tab and Picks from
             v[SAVER_ROW] = onOff(Prefs.saverWatch());
             v[WEATHER_ROW] = onOff(Prefs.weather());
@@ -1137,11 +1141,16 @@ public class SettingsActivity extends Activity {
                     SleepOverlay.update(getContext());   // the pill's glass follows
                     break;
                 }
+                case LAYOUT_ROW: {
+                    int at = java.util.Arrays.asList(LAYOUTS).indexOf(Prefs.layout());
+                    Prefs.setLayout(LAYOUTS[(at + dir + LAYOUTS.length) % LAYOUTS.length]);
+                    break;
+                }
                 case PHOTOS_ROW:
                     if (Photos.files(getContext()).isEmpty()) return;
                     Prefs.setPhotos(!Prefs.photos());
                     return;
-                case 4: Prefs.setSounds(!Prefs.sounds()); break;
+                case SOUNDS_ROW: Prefs.setSounds(!Prefs.sounds()); break;
                 case PICKS_ROW: return;
                 case SAVER_ROW: Prefs.setSaverWatch(!Prefs.saverWatch()); break;
                 case WEATHER_ROW: Prefs.setWeather(!Prefs.weather()); break;

@@ -74,6 +74,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // (HomeApps.shelfVisible; past that the shelf scrolls).
     private static final float SHELF_PAD = 40, TILE_GAP = 48;
     private static final float TILE_RADIUS = 22;
+    /** The dock layout (Prefs.layout): five apps in the band at the bottom of the screen, instead of the shelf. */
+    private static final int DOCK_APPS = 5;
     // Tile focus (Apple TV style): it grows from the center and its shadow drops (it "rises" toward the viewer).
     private static final float FOCUS_GROW = 0.2f;
     // Corner capsule.
@@ -167,6 +169,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
     private Paint lHello, lClockHead;   // CamGate skin: the header (greeting + date, then the clock)
+    private Paint lDockName;            // dock layout: the focused app's name above the band
     private Shader lightGradient;
 
     // Shelf
@@ -192,6 +195,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The first app the shelf shows: with more apps than fit, it scrolls with the focus. */
     private int shelfFirst;
     private final int shelfVisible;
+    /** The layout the home screen was built for (Prefs.layout at start): five apps in a dock, or the glass shelf. */
+    private final boolean dockLayout;
 
     // Moving apps on the shelf (as on Apple TV): hold OK on a tile, then ← → move it, OK drops it, Back cancels. The
     // lifted tile wiggles; the others slide to their new places (each slot's x offset is a spring that returns to 0).
@@ -397,6 +402,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         playing = new NowPlaying.Watch(a, this::onPlaying);
         click = new Click(a);
         shelfVisible = HomeApps.shelfVisible(a);
+        dockLayout = Prefs.layout().equals("dock");
         ui = a.getSharedPreferences("home-ui", Context.MODE_PRIVATE);
         tvInputs = (TvInputManager) a.getSystemService(Context.TV_INPUT_SERVICE);
         launcherApps = (LauncherApps) a.getSystemService(Context.LAUNCHER_APPS_SERVICE);
@@ -670,6 +676,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lHello.setLetterSpacing(0.004f);
         lClockHead = Ui.numbers(Ui.light, 58 * k, L_INK);
         lClockHead.setLetterSpacing(-0.01f);
+        lDockName = Ui.text(Ui.semibold, 28 * k, L_INK);
+        lDockName.setTextAlign(Paint.Align.CENTER);
         lWeather = Ui.text(Ui.medium, 34 * k, L_DIM);
         lClockQuote = Ui.numbers(Ui.medium, 28 * k, L_DIM);
         lightGradient = null;
@@ -803,8 +811,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float lift = -d * shift;
         show(heroLayer, top, lift);
         show(status, top, lift);
-        show(platter, home, lift);
-        show(tiles, home, lift);
+        // Dock layout: the band stays put and fades out under the drawer (there is no room for it above the rows).
+        float dockFade = dockLayout ? 1 - smoothstep(0.05f, 0.5f, dc) : 1;
+        float dockLift = dockLayout ? d * 90 * k : lift;
+        show(platter, home * dockFade, dockLift);
+        show(tiles, home * dockFade, dockLift);
         float da = home * smoothstep(0.1f, 0.6f, dc);
         drawerLayer.setTranslationY((1 - d) * shift);
         drawerLayer.setAlpha(da);
@@ -1162,6 +1173,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lClock.setColor(tone(L_INK, WHITE));
         lHello.setColor(tone(L_DIM, 0xFFD6D6DB));
         lClockHead.setColor(tone(L_INK, WHITE));
+        lDockName.setColor(tone(L_INK, WHITE));
         lWeather.setColor(tone(L_DIM, 0xFF98989D));
         lClockQuote.setColor(tone(L_DIM, 0xFF98989D));
         staleQuote.setColor(tone(L_FAINT, 0x99FFFFFF));
@@ -1340,16 +1352,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         platter.invalidate();
     }
 
+    /** How many apps the band shows: five in the dock layout, what fits on the shelf. */
+    private int slots() {
+        return dockLayout ? DOCK_APPS : shelfVisible;
+    }
+
     private void layoutShelf() {
-        int n = Math.min(shelf.size(), shelfVisible);
-        float pad = SHELF_PAD * k, gap = TILE_GAP * k;
+        int n = Math.min(shelf.size(), slots());
+        float pad = (dockLayout ? 32 : SHELF_PAD) * k, gap = (dockLayout ? 26 : TILE_GAP) * k;
         float full = (CONTENT_R - MARGIN) * k;
         // Tiles in the TV banners' own 16:9, so an app's art is never stretched; never taller than L_TILE_H. The glass
         // keeps its bottom edge, so with more apps it only gets lower.
         float tw = Math.min(L_TILE_H * 16f / 9 * k, (full - Math.max(0, n - 1) * gap) / Math.max(1, n));
         float th = tw * 9f / 16;
         float width = n * tw + Math.max(0, n - 1) * gap, left = (w - width) / 2f;
-        float top = (L_PLATTER_TOP + L_TILE_H) * k - th;
+        float top = dockLayout ? bottomDock() - 2 * pad - th : (L_PLATTER_TOP + L_TILE_H) * k - th;
         platterRect.set(left - pad, top, left + width + pad, top + th + 2 * pad);
         snap(platterRect);
         shelfFirst = Math.max(0, Math.min(shelfFirst, shelf.size() - n));
@@ -1362,9 +1379,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         crispLogos.clear();
     }
 
+    /** The dock band's bottom edge: near the bottom of the screen, where the home bar would be on a phone. */
+    private float bottomDock() {
+        return h - 26 * k;
+    }
+
     /** Scrolls the shelf, one app at a time, so the focused app is shown: the tiles slide there (unless `snap`). */
     private void revealShelf(boolean snap) {
-        int n = Math.min(shelf.size(), shelfVisible);
+        int n = Math.min(shelf.size(), slots());
         int first = Math.max(0, Math.min(Math.max(shelfFirst, shelfIndex - n + 1), Math.min(shelfIndex, shelf.size() - n)));
         if (first == shelfFirst || tileRects.length == 0) return;
         float dx = (shelfFirst - first) * (tileRects[0].width() + TILE_GAP * k);
@@ -1556,10 +1578,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         }
         if (liftIndex >= 0 && liftIndex < shelf.size() && moveLift.value > 0.02f) top = liftIndex;
-        int last = Math.min(shelf.size(), shelfFirst + shelfVisible);
+        int last = Math.min(shelf.size(), shelfFirst + slots());
         // Scrolling, tiles slide in and out through the glass's sides (only those that show any part are drawn). Only
         // then: on a shelf that fits, the clip would cut the end tiles' shadows in a straight line.
-        boolean scrolls = shelf.size() > shelfVisible;
+        boolean scrolls = shelf.size() > slots();
         if (scrolls) {
             c.save();
             c.clipRect(platterRect.left, 0, platterRect.right, h);
@@ -1585,6 +1607,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         }
         if (scrolls) c.restore();
+        // Dock layout: the focused app's name, centered over it (the shelf's tiles have no room for text).
+        if (dockLayout && !shelf.isEmpty()) {
+            int at = Math.max(0, Math.min(shelfIndex, shelf.size() - 1));
+            String name = shelf.get(at).label;
+            if (name != null && !name.isEmpty()) {
+                float slid = at < tileSlide.length ? tileSlide[at].value : 0;
+                float half = lDockName.measureText(name) / 2, min = platterRect.left + half, max = platterRect.right - half;
+                float cx = Math.max(min, Math.min(max, tileRects[at].centerX() + slid));
+                c.drawText(name, cx, platterRect.top - 12 * k, lDockName);
+            }
+        }
         // More apps than fit: a small arrow inside the glass's edge on each side that has more, where no tile reaches
         // even focused (inside the screen's safe area).
         float cy = platterRect.centerY(), size = 28 * k, inset = 14 * k;
@@ -2885,7 +2918,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         for (int i = picksOn() ? 0 : 3; i < 3 + lightButtons.size(); i++) out.add(a11yId(Z_TOP, i));
         for (int i = 0; i < Math.min(Recs.MAX_CARDS, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
-        for (int i = shelfFirst; i < Math.min(shelf.size(), shelfFirst + shelfVisible); i++) out.add(a11yId(Z_SHELF, i));
+        for (int i = shelfFirst; i < Math.min(shelf.size(), shelfFirst + slots()); i++) out.add(a11yId(Z_SHELF, i));
         for (int i = 0; i < drawerItems.size(); i++) out.add(a11yId(Z_DRAWER, i));
         if (drawerOpen && Prefs.weather()) out.add(a11yId(WIDGETS, 0));
         if (drawerOpen && Prefs.quotes() && HomeData.active().length > 0) out.add(a11yId(WIDGETS, 1));
