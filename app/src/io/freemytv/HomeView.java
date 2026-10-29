@@ -98,6 +98,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final float L_TALL_W = 320, L_CARD_GAP = 40, L_BUTTON = 68, L_BUTTON_GAP = 20, L_BUTTON_CY = 103;
     private static final float L_PLATTER_TOP = 814, L_TILE_H = 126;
     private static final float L_DATE_BASE = 330, L_CLOCK_BASE = 540, L_WEATHER_BASE = 626, L_QUOTES_BASE = 694;
+    /** CamGate skin: the header's two lines (the greeting and the date, then the clock) where the title used to be. */
+    private static final float L_HELLO_BASE = 58, L_CLOCK_HEAD_BASE = 126;
     private static final int L_INK = 0xFF1D1D1F, L_DIM = 0xFF6E6E73, L_FAINT = 0xFF8E8E93;
     private static String[] tabs;
     private static int tabsGeneration = -1;
@@ -164,6 +166,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final RectF[] cardRects = new RectF[Recs.MAX_CARDS];
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
+    private Paint lHello, lClockHead;   // CamGate skin: the header (greeting + date, then the clock)
     private Shader lightGradient;
 
     // Shelf
@@ -255,6 +258,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int w, h;
     private float k = 1;
     private String clockText = "", dateText = "", weatherLine = "";
+    private String helloText = "";      // CamGate skin: "Good evening", from the hour
     /** "Off in 42 min" next to the round buttons while the sleep timer runs (Settings > Sleep Timer); "" otherwise. */
     private String sleepText = "";
     private long weatherLineAt = -1;
@@ -662,6 +666,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lDate = Ui.text(Ui.semibold, 34 * k, L_DIM);
         lClock = Ui.numbers(Ui.light, 200 * k, L_INK);
         lClock.setLetterSpacing(-0.01f);
+        lHello = Ui.text(Ui.semibold, 31 * k, L_DIM);
+        lHello.setLetterSpacing(0.004f);
+        lClockHead = Ui.numbers(Ui.light, 58 * k, L_INK);
+        lClockHead.setLetterSpacing(-0.01f);
         lWeather = Ui.text(Ui.medium, 34 * k, L_DIM);
         lClockQuote = Ui.numbers(Ui.medium, 28 * k, L_DIM);
         lightGradient = null;
@@ -761,7 +769,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 refreshHero(false);
                 heroLayer.invalidate();
             }
-            if (!picksOn()) heroLayer.invalidate();
+            if (!picksOn() || sinal) heroLayer.invalidate();
         }
 
         // Busy: something is moving, or the sheet or the drawer is open.
@@ -856,6 +864,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         clockMinute = minute;
         clockText = Ui.clock(now);
         dateText = Ui.date(now);
+        int hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+        helloText = hour < 12 ? Ui.tr("Good morning") : hour < 18 ? Ui.tr("Good afternoon") : Ui.tr("Good evening");
         return true;
     }
 
@@ -1150,6 +1160,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lTip.setColor(tone(L_INK, WHITE));
         lDate.setColor(tone(L_DIM, 0xFF98989D));
         lClock.setColor(tone(L_INK, WHITE));
+        lHello.setColor(tone(L_DIM, 0xFFD6D6DB));
+        lClockHead.setColor(tone(L_INK, WHITE));
         lWeather.setColor(tone(L_DIM, 0xFF98989D));
         lClockQuote.setColor(tone(L_DIM, 0xFF98989D));
         staleQuote.setColor(tone(L_FAINT, 0x99FFFFFF));
@@ -3290,7 +3302,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         String hello = Ui.tr("For You");
-        c.drawText(hello, MARGIN * k - Ui.leftBearing(lTitle, hello), L_TITLE_BASE * k, lTitle);
+        if (sinal) drawSinalHeader(c);
+        else c.drawText(hello, MARGIN * k - Ui.leftBearing(lTitle, hello), L_TITLE_BASE * k, lTitle);
         // Text tabs (the selected one in bold, in the main text color); with focus on the tabs, the selected one gets
         // the white pill with a shadow and grows a little (the tvOS focus).
         float focus = Ui.clamp(topFocus[tab].value);
@@ -3326,6 +3339,27 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private boolean picksOn() {
         return Recs.hasKey(getContext());
+    }
+
+    /**
+     * CamGate skin's header, where the title used to be: the greeting and the date on the first line, the clock (thin,
+     * large) under it. The tabs keep their place below it, and the icon buttons stay at the top right.
+     */
+    private void drawSinalHeader(Canvas c) {
+        float x = MARGIN * k, base = L_HELLO_BASE * k;
+        String hello = helloText.isEmpty() ? Ui.tr("Good evening") : helloText;
+        c.drawText(hello, x - Ui.leftBearing(lHello, hello), base, lHello);
+        float dx = x + lHello.measureText(hello);
+        if (!dateText.isEmpty()) {
+            String dot = "·";
+            dx += 14 * k;
+            c.drawText(dot, dx - Ui.leftBearing(lDate, dot), base, lDate);
+            dx += lDate.measureText(dot) + 6 * k;
+            c.drawText(dateText, dx - Ui.leftBearing(lDate, dateText), base, lDate);
+        }
+        if (!clockText.isEmpty()) {
+            c.drawText(clockText, x - Ui.leftBearing(lClockHead, clockText), L_CLOCK_HEAD_BASE * k, lClockHead);
+        }
     }
 
     private void drawClock(Canvas c) {
