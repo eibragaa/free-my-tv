@@ -182,6 +182,17 @@ final class Prefs {
 
     static void setTheme(String v) { put("theme", v); }
 
+    /**
+     * Home layout: "shelf" (the glass shelf with the app icons, the tvOS look) or "dock" (the CamGate layout: a dock
+     * at the bottom, the focused app's name on top, the grid sliding up). It's a switch so the two can be tried on
+     * the TV without rebuilding, and so the shelf is still there if the dock doesn't work out.
+     */
+    static String layout() {
+        return sp().getString("layout", "shelf").equals("dock") ? "dock" : "shelf";
+    }
+
+    static void setLayout(String v) { put("layout", v.equals("dock") ? "dock" : "shelf"); }
+
     // MARK: - City
 
     static String city() { return sp().getString("city", Place.city()).trim(); }
