@@ -139,6 +139,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private Shader nightGradient;
     /** CamGate skin on (Prefs.theme "sinal"): graphite background, yellow focus ring, white text. */
     private boolean sinal;
+    // CamGate skin, ambient: after a while with no key the picks' photos cycle behind the home screen (any key brings
+    // the focused card's photo back). The pause between photos is long: it's a background, not a slideshow.
+    private static final long AMBIENT_AFTER_MS = 40_000, AMBIENT_EVERY_MS = 25_000;
+    private boolean ambient;
+    private long lastKeyAt;
+    private long ambientAt;
+    private int ambientIndex;
 
     // At the top: tabs (0 to 2) and icon-only buttons (3 to 5); the three cards
     private int tab, topIndex, cardIndex;
@@ -274,6 +281,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint sheen = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint veil = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private Paint sinalLeftScrim, sinalBottomScrim;   // CamGate skin: over the photo, for the text
+    private final Bitmap[] skyPhotoBmp = new Bitmap[2];   // CamGate skin: the photo behind the home screen
+    private final Backdrop[] skyPhotoOf = new Backdrop[2];
+    private final int[] skyScaled = new int[Backdrop.GW * Backdrop.GH];
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint tileFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF tmp = new RectF(), cell = new RectF(), screen = new RectF();
@@ -470,6 +481,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         motionDirty = true;
         invalidateAll();
         idle = false;
+        ambient = false;
+        lastKeyAt = SystemClock.uptimeMillis();
         Choreographer.getInstance().postFrameCallback(this);
         spoken.readAgain();
     }
@@ -725,6 +738,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean heroFading = tickHeroFade(up);
         boolean bgFading = tickBackgroundFade(up);
         boolean nightMoving = tickNight(up);
+        tickAmbient(up);
 
         if (drawerMoving || sheetMoving || motionDirty) updateMotion();
         // Opening and closing the drawer only moves the cached layers: redrawing the glass on every frame made the TV
@@ -938,13 +952,90 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         bgTo = b;
         bgFadeAt = up;
         nightPair = false;
-        if (b == null || glassOf(b) == null) return;
-        if (bgFrom == null || glassOf(bgFrom) == null) {
-            scene.setFrost(frostOf(b));
-            scene.setGlassImage(glassOf(b));
-        } else {
-            scene.setGlassImages(glassOf(bgFrom), glassOf(b));
+        // The sky is always redrawn: an early return here used to leave the previous photo on screen.
+        sky.invalidate();
+        if (b == null) {
+            neutralGlass();
+            return;
         }
+        int[] to = glassPixels(b), from = glassPixels(bgFrom);
+        if (to == null) {
+            neutralGlass();
+            return;
+        }
+        int[] fr = frostPixels(b);
+        if (fr != null) scene.setFrost(fr);
+        if (from != null) scene.setGlassImages(from, to);
+        else scene.setGlassImage(to);
+    }
+
+    /** The glass's pixels: the photo lightened/darkened for the moment, or the lightly blurred one when it has none. */
+    private int[] glassPixels(Backdrop b) {
+        if (b == null) return null;
+        int[] g = glassOf(b);
+        return g != null ? g : b.glass;
+    }
+
+    /** The frosted pixels (drawer, toasts): the blurred photo, or the plain one when the backdrop has no night copy. */
+    private int[] frostPixels(Backdrop b) {
+        if (b == null) return null;
+        int[] f = frostOf(b);
+        return f != null ? f : b.frost;
+    }
+
+    // MARK: - Ambient (CamGate skin)
+
+    /**
+     * With no key for a while, the picks' photos take turns behind the home screen instead of the flat graphite: the
+     * TV looks alive while nobody is touching it. Any key ends it and brings back the focused card's photo.
+     */
+    private void tickAmbient(long up) {
+        if (!sinal || !picksOn() || sheetOpen || drawerOpen || reordering) return;
+        if (ambient) {
+            if (up - ambientAt >= AMBIENT_EVERY_MS) rotateAmbient();
+        } else if (idle && up - lastKeyAt >= AMBIENT_AFTER_MS) {
+            ambient = true;
+            rotateAmbient();
+        }
+    }
+
+    private void rotateAmbient() {
+        List<Recs.Pick> all = ambientPicks();
+        if (all.size() < 2) return;
+        ambientAt = SystemClock.uptimeMillis();
+        for (int tries = 0; tries < all.size(); tries++) {
+            ambientIndex = (ambientIndex + 1) % all.size();
+            Backdrop b = recs.backdrop(all.get(ambientIndex));
+            if (b != null && b != bgTo) {   // the one already on screen is skipped
+                showBackdrop(b);
+                return;
+            }
+        }
+    }
+
+    /** Every pick of the three tabs (the ones whose photos are ready), for the ambient rotation. */
+    private List<Recs.Pick> ambientPicks() {
+        List<Recs.Pick> all = new ArrayList<>(cards);
+        for (int t = 0; t < TAB_KIND.length; t++) {
+            if (t == tab) continue;
+            all.addAll(recs.now(TAB_KIND[t]));
+        }
+        return all;
+    }
+
+    /** The photo the focus asks for right now (when ambient ends). */
+    private Backdrop backgroundNow() {
+        if (zone == Z_HERO) return recs.backdrop(currentPick());
+        Recs.Pick p = zone == Z_CARDS && cardIndex < cards.size() ? cards.get(cardIndex)
+                : cards.isEmpty() ? null : cards.get(0);
+        return p == null ? null : recs.backdrop(p);
+    }
+
+    /** A key came: the background goes back to the focused card's photo. */
+    private void endAmbient() {
+        if (!ambient) return;
+        ambient = false;
+        showBackdrop(backgroundNow());
     }
 
     /** What the glass shows: the photo lightened (by day), darkened (at night) or blended in between. */
@@ -1015,7 +1106,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Redraws for the current night value (the glass now reads the lightened, blended or darkened photo). */
     private void nightChanged() {
         if (bgFadeAt == 0 && bgTo != null && bgTo.lightGlass != null) {
-            scene.setFrost(frostOf(bgTo));
+            scene.setFrost(frostPixels(bgTo));
             if (nightAt != 0 && bgTo.nightGlass != null) {
                 if (!nightPair) {
                     scene.setGlassImages(bgTo.lightGlass, bgTo.nightGlass);
@@ -2263,6 +2354,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     boolean onKey(KeyEvent e) {
         wake();
+        lastKeyAt = SystemClock.uptimeMillis();
+        endAmbient();   // any key brings the focused card's photo back
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         if (reordering) return reorderKey(e, down);
         int code = e.getKeyCode();
@@ -3055,7 +3148,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Picks bring their own background; without them (no TMDB key), your photo if there is one.
         boolean own = !picksOn() && Photos.on(getContext());
         Backdrop b = own ? Photos.backdrop(getContext(), ownReady) : cards.isEmpty() ? null : recs.backdrop(cards.get(0));
-        if (b != null || (cards.isEmpty() && !own)) showBackdrop(b);
+        // The ambient rotation owns the background while it runs (this runs again every 15 s: it would undo it).
+        if (!ambient && (b != null || (cards.isEmpty() && !own))) showBackdrop(b);
         heroDirty = true;
         spoken.focusMoved();    // new picks under the focused card
     }
@@ -3077,6 +3171,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * same photo almost black (or a dark gradient), drawn on top during the transition.
      */
     private void drawLightSky(Canvas c) {
+        if (sinal) {   // CamGate skin: the photo, dimmed, over graphite (not the flat frosted wash)
+            drawSinalSky(c);
+            return;
+        }
         long up = SystemClock.uptimeMillis();
         float e = bgFadeAt == 0 ? 1 : fadeEase(bgFadeAt, up);
         boolean fading = bgFadeAt != 0;
@@ -3104,6 +3202,79 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (fading && bgFrom != null) drawLightImage(c, bgFrom, bgTo == null ? 1 - e : 1);
         if (bgTo != null) drawLightImage(c, bgTo, fading ? e : 1);
         imagePaint.setColorFilter(null);
+    }
+
+    /**
+     * CamGate skin's background: the picks' photo (lightly blurred, so it reads as a photo instead of the flat wash
+     * the frosted copy gives) over graphite, with scrims so the white text and the glass stay readable.
+     */
+    private void drawSinalSky(Canvas c) {
+        long up = SystemClock.uptimeMillis();
+        float e = bgFadeAt == 0 ? 1 : fadeEase(bgFadeAt, up);
+        boolean fading = bgFadeAt != 0;
+        if (nightGradient == null) nightGradient = Ui.gradient(h, 0xFF1C1C1C, 0xFF0B0B0B);
+        fill.setShader(nightGradient);
+        fill.setColorFilter(null);
+        fill.setAlpha(255);
+        c.drawRect(screen, fill);
+        fill.setShader(null);
+        imagePaint.setColorFilter(null);
+        Bitmap from = skyPhoto(bgFrom), to = skyPhoto(bgTo);
+        if (fading && from != null) drawImage(c, from, 1 - e);
+        if (to != null) drawImage(c, to, fading ? e : 1);
+        imagePaint.setColorFilter(null);
+        if (from == null && to == null) return;
+        if (sinalLeftScrim == null) {
+            sinalLeftScrim = new Paint(Paint.DITHER_FLAG);
+            sinalLeftScrim.setShader(new LinearGradient(0, 0, w * 0.72f, 0,
+                    new int[] {0xB3000000, 0x80000000, 0x33000000, 0},
+                    new float[] {0, 0.3f, 0.62f, 1}, Shader.TileMode.CLAMP));
+            sinalBottomScrim = new Paint(Paint.DITHER_FLAG);
+            sinalBottomScrim.setShader(new LinearGradient(0, h, 0, h * 0.62f,
+                    new int[] {0x8C000000, 0x59000000, 0x1F000000, 0},
+                    new float[] {0, 0.35f, 0.7f, 1}, Shader.TileMode.CLAMP));
+        }
+        veil.setShader(null);
+        veil.setColor(0x40000000);     // a light even dim: white text over any frame
+        c.drawRect(screen, veil);
+        c.drawRect(screen, sinalLeftScrim);
+        c.drawRect(0, h * 0.62f, w, h, sinalBottomScrim);
+    }
+
+    /**
+     * The photo behind the home screen in the CamGate skin: the pick's lightly blurred pixels as a bitmap, lifted to a
+     * usable brightness (the glass's copy is darkened). Two are kept, one per side of the cross-fade, and reused.
+     */
+    private Bitmap skyPhoto(Backdrop b) {
+        if (b == null) return null;
+        for (int i = 0; i < 2; i++) if (skyPhotoOf[i] == b) return skyPhotoBmp[i];
+        int slot = -1;
+        for (int i = 0; i < 2 && slot < 0; i++) if (skyPhotoOf[i] != bgFrom && skyPhotoOf[i] != bgTo) slot = i;
+        if (slot < 0) slot = 0;
+        int[] px = b.nightGlass != null ? b.nightGlass : b.lightGlass != null ? b.lightGlass : b.glass;
+        if (px == null) return b.image;      // a full photo (with its own scrims), when the backdrop has one
+        int n = Math.min(px.length, skyScaled.length);
+        long sum = 0;
+        int samples = 0;
+        for (int i = 0; i < n; i += 37) {
+            int p = px[i];
+            sum += Math.round(0.2126f * ((p >> 16) & 255) + 0.7152f * ((p >> 8) & 255) + 0.0722f * (p & 255));
+            samples++;
+        }
+        float avg = sum / (float) Math.max(1, samples) / 255f;
+        float gain = Math.max(1f, Math.min(4.2f, 0.42f / Math.max(0.02f, avg)));
+        for (int i = 0; i < n; i++) {
+            int p = px[i];
+            int r = Math.min(255, Math.round(((p >> 16) & 255) * gain));
+            int g = Math.min(255, Math.round(((p >> 8) & 255) * gain));
+            int bl = Math.min(255, Math.round((p & 255) * gain));
+            skyScaled[i] = 0xFF000000 | (r << 16) | (g << 8) | bl;
+        }
+        Bitmap d = skyPhotoBmp[slot];
+        if (d == null) d = skyPhotoBmp[slot] = Bitmap.createBitmap(Backdrop.GW, Backdrop.GH, Bitmap.Config.ARGB_8888);
+        d.setPixels(skyScaled, 0, Backdrop.GW, 0, 0, Backdrop.GW, Backdrop.GH);
+        skyPhotoOf[slot] = b;
+        return d;
     }
 
     private void drawLightImage(Canvas c, Backdrop b, float alpha) {
