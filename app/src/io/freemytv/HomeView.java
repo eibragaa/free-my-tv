@@ -170,6 +170,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
     private Paint lHello, lClockHead;   // CamGate skin: the header (greeting + date, then the clock)
     private Paint lDockName;            // dock layout: the focused app's name above the band
+    private Paint lPill;                // CamGate skin: the top buttons' names, inside their pills
     private Shader lightGradient;
 
     // Shelf
@@ -678,6 +679,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lClockHead.setLetterSpacing(-0.01f);
         lDockName = Ui.text(Ui.semibold, 28 * k, L_INK);
         lDockName.setTextAlign(Paint.Align.CENTER);
+        lPill = Ui.text(Ui.medium, 25 * k, L_INK);
         lWeather = Ui.text(Ui.medium, 34 * k, L_DIM);
         lClockQuote = Ui.numbers(Ui.medium, 28 * k, L_DIM);
         lightGradient = null;
@@ -3147,8 +3149,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         float b = L_BUTTON * k, right = CONTENT_R * k, cy = L_BUTTON_CY * k;
         for (int i = lightButtons.size() - 1; i >= 0; i--) {
-            topRects[3 + i].set(right - b, cy - b / 2, right, cy + b / 2);
-            right -= b + L_BUTTON_GAP * k;
+            // CamGate skin: a frost pill with the button's name on it (no room for a floating label on a dark photo).
+            float bw = sinal ? pillWidth(lightButtons.get(i)) : b;
+            topRects[3 + i].set(right - bw, cy - b / 2, right, cy + b / 2);
+            right -= bw + L_BUTTON_GAP * k;
         }
         float top = L_CARDS_TOP * k, ch = L_CARD_H * k, g = L_CARD_GAP * k, left = MARGIN * k, tall = L_TALL_W * k;
         for (HomeApps.Item it : lightButtons) {
@@ -3507,11 +3511,46 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * The round buttons (Live TV, HDMI Inputs and Settings by default): icon-only glass circles (light by day, smoked at
      * night); the focused one turns white with a dark icon (the tvOS focus) and its name appears below it.
      */
+    /** The CamGate skin's button pill: its icon, its name, and the room around them (the height is the same 68). */
+    private float pillWidth(HomeApps.Item it) {
+        return 26 * k + 27 * k + 12 * k + lPill.measureText(it.label) + 26 * k;
+    }
+
+    /**
+     * CamGate skin's top-right button: a frost pill carrying its icon and name (the floating label the other skins
+     * use would sit over the photo). Focused, it grows a little and turns white with dark ink.
+     */
+    private void drawPill(Canvas c, HomeApps.Item it, RectF r, float f) {
+        float g = 1 + 0.06f * f, w = r.width() * g, h = r.height() * g, rr = h / 2;
+        float cx = r.centerX(), cy = r.centerY();
+        cell.set(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2);
+        tmp.set(cell);
+        tmp.offset(0, (4 + 6 * f) * k);
+        shadow.setColor(Ui.alpha(0xFF000000, tone(0.1f, 0.34f) + 0.14f * f));
+        shadows.draw(c, tmp, rr, SHADOW_BLUR * k, shadow);
+        scene.liquid(c, cell, rr, tone(0xFFFFFFFF, SMOKE), tone(0.55f, 0.55f), tone(0.02f, 0.01f), 12 * k, 8 * k,
+                tone(0.6f, 0.5f), 1 - f);
+        if (f > 0.01f) {
+            fill.setShader(null);
+            fill.setColor(Ui.alpha(0xFFFFFFFF, f));
+            c.drawRoundRect(cell, rr, rr, fill);
+        }
+        int ink = blend(tone(L_INK, 0xEBFFFFFF), L_INK, f);
+        float pad = 26 * k * g, icon = 27 * k * g, x = cell.left + pad;
+        Symbols.draw(getContext(), c, it.symbol, x + icon / 2, cy, icon, ink);
+        lPill.setColor(ink);
+        c.drawText(it.label, x + icon + 12 * k, cy + Ui.halfCap(lPill), lPill);
+    }
+
     private void drawLightButtons(Canvas c) {
         applyTone();
         for (int i = 0; i < lightButtons.size(); i++) {
             HomeApps.Item it = lightButtons.get(i);
             RectF r = topRects[3 + i];
+            if (sinal) {
+                drawPill(c, it, r, Ui.clamp(topFocus[3 + i].value));
+                continue;
+            }
             float f = Ui.clamp(topFocus[3 + i].value), s = 1 + 0.1f * f, rad = r.width() / 2 * s;
             cell.set(r.centerX() - rad, r.centerY() - rad, r.centerX() + rad, r.centerY() + rad);
             tmp.set(cell);
